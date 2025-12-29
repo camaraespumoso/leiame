@@ -53,67 +53,66 @@
 <script type="module">
     import { GoogleGenerativeAI } from "@google/generative-ai";
 
-    // --- CONFIGURAÇÃO DE AUTO-LOAD ---
-    // Coloque aqui o caminho dos arquivos dentro da sua pasta /documentos
+    // --- CONFIGURAÇÃO DE ARQUIVOS NA RAIZ ---
+    // Verifique se os nomes abaixo são EXATAMENTE iguais aos arquivos no GitHub
     const PDF_FILES = [
-    "LEI_ORGANICA.pdf", 
-    "REGIMENTO_INTERNO.pdf"
-    "regime_juridico.pdf"    
-    "EDITAL_CONCURSO.pdf"
+	"LEI_ORGANICA.pdf", 
+	"REGIMENTO_INTERNO.pdf"
+	"regime_juridico.pdf"    
+	"EDITAL_CONCURSO.pdf"
     ];
 
     let contextData = "";
     const status = document.getElementById('statusInfo');
 
-    // Função para carregar os PDFs automaticamente
-async function loadAllPDFs() {
-    const status = document.getElementById('statusInfo');
-    status.textContent = "📂 Tentando ler arquivos da raiz...";
-    
-    try {
-        for (const url of PDF_FILES) {
-            console.log("Tentando carregar:", url);
-            status.textContent = `⏳ Lendo: ${url}...`;
-            
-            const response = await fetch(url);
-            
-            if (!response.ok) {
-                throw new Error(`Arquivo "${url}" não encontrado na raiz (Erro 404). Verifique o nome.`);
-            }
-            
-            const arrayBuffer = await response.arrayBuffer();
-            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-            
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const text = await page.getTextContent();
-                contextData += text.items.map(s => s.str).join(' ') + " ";
-            }
-        }
-        status.innerHTML = "✅ <strong>Legislação Carregada!</strong> Tudo pronto.";
-        status.style.backgroundColor = "#d4edda";
-    } catch (err) {
-        console.error(err);
-        // Exibe o erro real na tela para você saber o que houve
-        status.innerHTML = `❌ <strong>ERRO:</strong> ${err.message}<br><small>Dica: No PC, use o Live Server do VS Code. No Git, verifique nomes (Maiúsculas/Minúsculas).</small>`;
-        status.style.backgroundColor = "#f8d7da";
-        status.style.color = "#721c24";
-    }
-}
+    // Função de carregamento automático
+    async function loadAllPDFs() {
+        status.textContent = "📂 Carregando legislação da raiz...";
+        try {
+            for (const url of PDF_FILES) {
+                status.textContent = `⏳ Lendo arquivo: ${url}...`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`Arquivo "${url}" não encontrado. Verifique o nome no Git.`);
+                }
 
-    // Inicializa
+                const arrayBuffer = await response.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(s => s.str).join(' ');
+                    contextData += pageText + " ";
+                }
+            }
+            status.innerHTML = "✅ <strong>Legislação Carregada!</strong> Sistema pronto.";
+            status.style.backgroundColor = "#d4edda";
+            status.style.color = "#155724";
+        } catch (err) {
+            console.error("Erro no processamento:", err);
+            status.innerHTML = `❌ <strong>ERRO:</strong> ${err.message}`;
+            status.style.backgroundColor = "#f8d7da";
+            status.style.color = "#721c24";
+        }
+    }
+
+    // Inicialização ao carregar a página
     window.addEventListener('DOMContentLoaded', loadAllPDFs);
 
+    // Lógica do Chat
     document.getElementById('sendBtn').addEventListener('click', async () => {
         const input = document.getElementById('userInput');
         const chat = document.getElementById('chatHistory');
         const loader = document.getElementById('aiLoader');
         
-        // Pega a chave do config.js
-        const key = (typeof CONFIG !== 'undefined') ? CONFIG.GOOGLE_API_KEY : "";
+        // Pega a chave do config.js ou do armazenamento do navegador
+        const key = (typeof CONFIG !== 'undefined') ? CONFIG.GOOGLE_API_KEY : localStorage.getItem('gemini_api_key');
 
-        if (!key) return alert("Configure sua API Key no config.js");
+        if (!key) return alert("API Key não encontrada no config.js ou no navegador.");
         if (!input.value.trim()) return;
+        if (!contextData) return alert("Aguarde o carregamento dos documentos.");
 
         const question = input.value.trim();
         appendMsg(question, 'user');
@@ -123,15 +122,17 @@ async function loadAllPDFs() {
         try {
             const genAI = new GoogleGenerativeAI(key);
             
-            // USANDO GEMINI 2.0 FLASH (Conforme sua lista de IDs permitidos)
-            // FORÇANDO VERSÃO V1 PARA EVITAR 404
+            // Forçando Gemini 2.0 Flash e Versão v1 (Estável)
             const model = genAI.getGenerativeModel(
                 { model: "gemini-2.0-flash" },
                 { apiVersion: "v1" }
             );
 
-            const prompt = `Você é um Consultor Legislativo especializado na Câmara de Espumoso/RS.
-            Responda com base neste texto: ${contextData.substring(0, 40000)}
+            const prompt = `Você é um Consultor Legislativo da Câmara de Espumoso/RS.
+            Use o texto abaixo como base única:
+            ---
+            ${contextData.substring(0, 45000)}
+            ---
             Pergunta: ${question}`;
 
             const result = await model.generateContent(prompt);
@@ -156,5 +157,6 @@ async function loadAllPDFs() {
 </body>
 
 </html>
+
 
 
