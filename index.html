@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consultor Legislativo - Câmara de Espumoso</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+    
+    <script type="importmap">
+      { "imports": { "@google/generative-ai": "https://esm.run/@google/generative-ai" } }
+    </script>
+
+    <script src="config.js" onerror="console.warn('config.js não encontrado.')"></script>
+
+    <style>
+        :root { --primary: #0056b3; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 100%; max-width: 900px; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h1 { color: var(--primary); text-align: center; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        .status-box { background: #e8f4fd; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; color: #0056b3; border: 1px solid #d1e9ff; }
+        #chatHistory { height: 450px; overflow-y: auto; border: 1px solid #eee; padding: 20px; margin-bottom: 20px; background: #fafafa; border-radius: 8px; display: flex; flex-direction: column; gap: 15px; }
+        .msg { padding: 12px 16px; border-radius: 15px; max-width: 80%; line-height: 1.6; font-size: 15px; }
+        .user { background: var(--primary); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        .ai { background: #e9e9eb; color: #1a1a1a; align-self: flex-start; border-bottom-left-radius: 2px; }
+        .input-group { display: flex; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 15px; border: 2px solid #eee; border-radius: 8px; outline: none; }
+        button { background: var(--primary); color: white; border: none; padding: 0 25px; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        button:disabled { background: #ccc; }
+        .loader { display: none; text-align: center; font-weight: bold; color: var(--primary); margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🏛️ Consultor Legislativo - Espumoso</h1>
+
+    <div id="statusInfo" class="status-box">⏳ Iniciando sistema...</div>
+
+    <div id="chatHistory">
+        <div class="msg ai">Olá Daniel! O sistema está carregando a legislação de Espumoso automaticamente.</div>
+    </div>
+
+    <div id="aiLoader" class="loader">IA Consultando Leis... ⌛</div>
+
+    <div class="input-group">
+        <input type="text" id="userInput" placeholder="Digite sua dúvida legislativa...">
+        <button id="sendBtn">Enviar</button>
+    </div>
+</div>
+
+<script type="module">
+    import { GoogleGenerativeAI } from "@google/generative-ai";
+
+    // --- CONFIGURAÇÃO DE AUTO-LOAD ---
+    // Coloque aqui o caminho dos arquivos dentro da sua pasta /documentos
+    const PDF_FILES = [
+        "documentos/lei_organica.pdf",
+        "documentos/regimento_interno.pdf"
+    ];
+
+    let contextData = "";
+    const status = document.getElementById('statusInfo');
+
+    // Função para carregar os PDFs automaticamente
+    async function loadAllPDFs() {
+        status.textContent = "📂 Carregando PDFs da pasta /documentos...";
+        try {
+            for (const url of PDF_FILES) {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Arquivo não encontrado: ${url}`);
+                const arrayBuffer = await response.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const text = await page.getTextContent();
+                    contextData += text.items.map(s => s.str).join(' ') + " ";
+                }
+            }
+            status.innerHTML = "✅ <strong>Legislação Carregada!</strong> Pronto para consulta.";
+            status.style.backgroundColor = "#d4edda";
+            status.style.color = "#155724";
+        } catch (err) {
+            console.error(err);
+            status.innerHTML = "⚠️ <strong>Aviso:</strong> Carregamento automático falhou. Use o Live Server do VS Code ou suba para o GitHub.";
+        }
+    }
+
+    // Inicializa
+    window.addEventListener('DOMContentLoaded', loadAllPDFs);
+
+    document.getElementById('sendBtn').addEventListener('click', async () => {
+        const input = document.getElementById('userInput');
+        const chat = document.getElementById('chatHistory');
+        const loader = document.getElementById('aiLoader');
+        
+        // Pega a chave do config.js
+        const key = (typeof CONFIG !== 'undefined') ? CONFIG.GOOGLE_API_KEY : "";
+
+        if (!key) return alert("Configure sua API Key no config.js");
+        if (!input.value.trim()) return;
+
+        const question = input.value.trim();
+        appendMsg(question, 'user');
+        input.value = "";
+        loader.style.display = "block";
+
+        try {
+            const genAI = new GoogleGenerativeAI(key);
+            
+            // USANDO GEMINI 2.0 FLASH (Conforme sua lista de IDs permitidos)
+            // FORÇANDO VERSÃO V1 PARA EVITAR 404
+            const model = genAI.getGenerativeModel(
+                { model: "gemini-2.0-flash" },
+                { apiVersion: "v1" }
+            );
+
+            const prompt = `Você é um Consultor Legislativo especializado na Câmara de Espumoso/RS.
+            Responda com base neste texto: ${contextData.substring(0, 40000)}
+            Pergunta: ${question}`;
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            appendMsg(response.text(), 'ai');
+
+        } catch (err) {
+            appendMsg("Erro na consulta: " + err.message, 'ai');
+        } finally {
+            loader.style.display = "none";
+        }
+    });
+
+    function appendMsg(text, type) {
+        const div = document.createElement('div');
+        div.className = `msg ${type}`;
+        div.innerHTML = text.replace(/\n/g, '<br>');
+        document.getElementById('chatHistory').appendChild(div);
+        document.getElementById('chatHistory').scrollTop = document.getElementById('chatHistory').scrollHeight;
+    }
+</script>
+</body>
+</html>
